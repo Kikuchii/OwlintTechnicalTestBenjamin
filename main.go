@@ -10,6 +10,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// password in clear !!
 const (
 	host     = "localhost"
 	port     = 5432
@@ -27,6 +28,8 @@ type comment struct {
 	TargetId    string `json:"targetid"`
 }
 
+// main function
+// launch the router
 func main() {
 	router := gin.Default()
 	router.GET("/target/:targetID/comment", getComment)
@@ -35,23 +38,31 @@ func main() {
 	return
 }
 
+// function trigger by POST /target/:targetId/comments
+// return all comments whos link with the targetid sent with the request
 func getComment(c *gin.Context) {
 	db := DBConnection()
+	defer db.Close()
 	rows, err := db.Query(fmt.Sprintf("SELECT * FROM comments WHERE targetid = '%s'", c.Param("targetID")))
 	if err != nil {
 		panic(err)
 	}
 	defer rows.Close()
+
 	var comments []comment
 
 	comments, err = rowsToSlice(rows)
 	if err != nil {
 		panic(err)
 	}
-
+	if len(comments) == 0 {
+		c.String(http.StatusNotFound, "Comment not found")
+	}
 	c.IndentedJSON(http.StatusOK, comments)
 }
 
+// function who extract data from *sql.Rows to []comment
+// []comment can be easely manipulate
 func rowsToSlice(rows *sql.Rows) ([]comment, error) {
 	var comments []comment
 	for rows.Next() {
@@ -67,21 +78,25 @@ func rowsToSlice(rows *sql.Rows) ([]comment, error) {
 	return comments, nil
 }
 
+// function trigger by POST /target/:targetId/comments
+// get parameters from request to save a new comment in database
+// If one or more parameters miss, do we must return a 400 Bad request ?
 func postComment(c *gin.Context) {
 	var newComment comment
 	if err := c.BindJSON(&newComment); err != nil {
 		return
 	}
-
 	db := DBConnection()
+	defer db.Close()
 	_, err := db.Query(fmt.Sprintf("INSERT INTO comments VALUES ('%s', '%s', '%s', '%s', '%s', '%s')", newComment.Id, newComment.TextFR, newComment.TextEn, newComment.PublishedAt, newComment.AuthorID, newComment.TargetId))
 	if err != nil {
 		panic(err)
 	}
 	c.IndentedJSON(http.StatusCreated, newComment)
-	defer db.Close()
 }
 
+// function to connect with the database
+// Warning the pointer must be closed outside from this function
 func DBConnection() *sql.DB {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
