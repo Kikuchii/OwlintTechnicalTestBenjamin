@@ -8,7 +8,7 @@ CREATE TABLE comments (
     textEn text,
     publishedAt varchar NOT NULL,
     authorId varchar,
-    tagetId varchar NOT NULL
+    targetId varchar NOT NULL
 );
 
 COMMIT;

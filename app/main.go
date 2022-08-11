@@ -16,7 +16,7 @@ import (
 
 // password in clear !!
 const (
-	host           = "0.0.0.0"
+	host           = "db"
 	port           = 5432
 	user           = "postgres"
 	password       = "docker"
@@ -150,11 +150,13 @@ func DBConnection() *sql.DB {
 		"password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
+		fmt.Printf("sqlOpen error\n")
 		panic(err)
 	}
 
 	err = db.Ping()
 	if err != nil {
+		fmt.Printf("db.Ping error")
 		panic(err)
 	}
 	return db
