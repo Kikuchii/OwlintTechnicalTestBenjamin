@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
+
+	"github.com/OwlintTechnicalTestBenjamin/pkg"
+	"github.com/OwlintTechnicalTestBenjamin/translate"
 
 	"github.com/gin-gonic/gin"
-
 	_ "github.com/lib/pq"
 )
 
@@ -22,31 +22,7 @@ const (
 	password       = "docker"
 	dbname         = "commentsdb"
 	faulty_backend = "https://faulty-backend.herokuapp.com/on_comment"
-	deepLKey       = "5e4e98a7-332f-9230-d405-3f6f28f7ebaf:fx"
 )
-
-type comment struct {
-	Id          string `json:"id"`
-	TextFR      string `json:"textfr"`
-	TextEn      string `json:"texten"`
-	PublishedAt string `json:"publishedat"`
-	AuthorID    string `json:"authorid"`
-	TargetId    string `json:"targetid"`
-}
-
-type deepLResponse struct {
-	Translations []translatedComment `json:"translations"`
-}
-
-type translatedComment struct {
-	Detected_source_language string `json:"detected_source_language"`
-	Text                     string `json:"text"`
-}
-
-type faultymessage struct {
-	Message string `json:"message"`
-	Author  string `json:"author"`
-}
 
 // main function
 // launch the router
@@ -65,28 +41,34 @@ func getComment(c *gin.Context) {
 	defer db.Close()
 	rows, err := db.Query(fmt.Sprintf("SELECT * FROM comments WHERE targetid = '%s'", c.Param("targetID")))
 	if err != nil {
-		panic(err)
+		c.String(http.StatusInternalServerError, "Query error")
+		return
+		//panic(err)
 	}
 	defer rows.Close()
 
-	var comments []comment
+	var comments []pkg.Comment
 	comments, err = rowsToSlice(rows)
 	if err != nil {
-		panic(err)
+		c.String(http.StatusInternalServerError, "error during transform *Rows in Slice")
+		return
+		//panic(err)
 	}
 	if len(comments) == 0 {
 		c.String(http.StatusNotFound, "Comment not found")
+		return
 	}
 
 	c.IndentedJSON(http.StatusOK, comments)
+	return
 }
 
 // function who extract data from *sql.Rows to []comment
 // []comment can be easely manipulate
-func rowsToSlice(rows *sql.Rows) ([]comment, error) {
-	var comments []comment
+func rowsToSlice(rows *sql.Rows) ([]pkg.Comment, error) {
+	var comments []pkg.Comment
 	for rows.Next() {
-		var cmnt comment
+		var cmnt pkg.Comment
 		if err := rows.Scan(&cmnt.Id, &cmnt.TextFR, &cmnt.TextEn, &cmnt.PublishedAt, &cmnt.AuthorID, &cmnt.TargetId); err != nil {
 			return comments, err
 		}
@@ -104,16 +86,16 @@ func rowsToSlice(rows *sql.Rows) ([]comment, error) {
 func postComment(c *gin.Context) {
 	db := DBConnection()
 	defer db.Close()
-	var newComment comment
+	var newComment pkg.Comment
 	if err := c.BindJSON(&newComment); err != nil {
 		return
 	}
 
-	//Translate
+	//Traduction
 	if newComment.TextFR != "" {
-		newComment.TextEn = Translate("FR", "EN", newComment.TextFR)
+		newComment.TextEn = translate.DeepLTranslate("FR", "EN", newComment.TextFR)
 	} else if newComment.TextEn != "" {
-		newComment.TextFR = Translate("EN", "FR", newComment.TextEn)
+		newComment.TextFR = translate.DeepLTranslate("EN", "FR", newComment.TextEn)
 	} else {
 		return
 	}
@@ -122,7 +104,7 @@ func postComment(c *gin.Context) {
 
 	//Post sur FaultyBackend
 	//extraction du message et de l'auteur et conversion en JSON
-	var faulty faultymessage
+	var faulty pkg.Faultymessage
 	faulty.Message = newComment.TextFR
 	faulty.Author = newComment.AuthorID
 	json, err := json.Marshal(faulty)
@@ -162,23 +144,7 @@ func DBConnection() *sql.DB {
 	return db
 }
 
-func Translate(source_lang string, target_lang string, comment string) string {
-	urlstr := "https://api-free.deepl.com/v2/translate?auth_key=" + deepLKey + "&text=" + url.QueryEscape(comment) + "&target_lang=" + target_lang + "&source_lang=" + source_lang
-
-	resp, err := http.Post(urlstr, "application/x-www-form-urlencoded", nil)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-	str, err := ioutil.ReadAll(resp.Body)
-
-	var DeepLResponse deepLResponse
-	json.Unmarshal(str, &DeepLResponse)
-
-	return DeepLResponse.Translations[0].Text
-}
-
-func DbInsertNewComment(db *sql.DB, newComment comment) *sql.Rows {
+func DbInsertNewComment(db *sql.DB, newComment pkg.Comment) *sql.Rows {
 	/*
 		tx, err := db.Begin()
 		rows, err := tx.Exec()
